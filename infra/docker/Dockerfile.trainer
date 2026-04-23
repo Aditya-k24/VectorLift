@@ -1,0 +1,103 @@
+# =============================================================================
+# VectorLift — Model Trainer (GPU-capable)
+# =============================================================================
+# Base image: PyTorch 2.1.0 with CUDA 11.8 + cuDNN 8 runtime
+# This image is GPU-capable; pass --gpus all to docker run / configure
+# resources.reservations in docker-compose.
+#
+# Example (local GPU):
+#   docker build -f infra/docker/Dockerfile.trainer -t vectorlift-trainer .
+#   docker run --gpus all -v $(pwd)/data:/app/data -v $(pwd)/models:/app/models \
+#       vectorlift-trainer apps.trainer.train_biencoder
+#
+# Example (CPU fallback — set BIENCODER_DEVICE=cpu):
+#   docker run -e BIENCODER_DEVICE=cpu vectorlift-trainer apps.trainer.train_biencoder
+# =============================================================================
+
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+
+LABEL maintainer="aditya.kulkarni@isomer.ai" \
+      service="vectorlift-trainer" \
+      version="0.1.0" \
+      cuda="11.8" \
+      cudnn="8"
+
+# ── System dependencies ───────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        gcc \
+        g++ \
+        libpq-dev \
+        libffi-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Non-root user ─────────────────────────────────────────────────────────
+RUN groupadd --gid 1001 vectorlift \
+    && useradd --uid 1001 --gid vectorlift --shell /bin/bash --create-home vectorlift
+
+WORKDIR /app
+
+# ── Python package installation ───────────────────────────────────────────
+# PyTorch is already installed in the base image.
+# Install the remaining project dependencies.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+RUN pip install --no-cache-dir \
+        "transformers>=4.41.0" \
+        "sentence-transformers>=3.0.0" \
+        "datasets>=2.19.0" \
+        "scikit-learn>=1.4.0" \
+        "numpy>=1.26.0" \
+        "pandas>=2.2.0" \
+        "scipy>=1.13.0" \
+        "pydantic>=2.7.0" \
+        "pydantic-settings>=2.3.0" \
+        "sqlalchemy[asyncio]>=2.0.30" \
+        "asyncpg>=0.29.0" \
+        "psycopg2-binary>=2.9.9" \
+        "elasticsearch>=8.13.0" \
+        "qdrant-client>=1.9.0" \
+        "rank-bm25>=0.2.2" \
+        "prometheus-client>=0.20.0" \
+        "python-dotenv>=1.0.1" \
+        "pyyaml>=6.0.1" \
+        "rich>=13.7.1" \
+        "tenacity>=8.3.0" \
+        "prefect>=2.19.0" \
+        "accelerate>=0.29.0" \
+        "tqdm>=4.66.0"
+
+# ── Copy source ───────────────────────────────────────────────────────────
+COPY --chown=vectorlift:vectorlift core/         ./core/
+COPY --chown=vectorlift:vectorlift retrieval/    ./retrieval/
+COPY --chown=vectorlift:vectorlift apps/trainer/ ./apps/trainer/
+COPY --chown=vectorlift:vectorlift apps/__init__.py ./apps/__init__.py
+COPY --chown=vectorlift:vectorlift pipelines/    ./pipelines/
+COPY --chown=vectorlift:vectorlift pyproject.toml ./
+
+# ── Data & model mount points ─────────────────────────────────────────────
+RUN mkdir -p /app/data /app/models /app/experiments \
+    && chown -R vectorlift:vectorlift /app
+
+# ── CUDA environment ──────────────────────────────────────────────────────
+ENV CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TOKENIZERS_PARALLELISM=false
+
+USER vectorlift
+
+# Trainer does not expose ports
+# Health check: verify torch + CUDA stack is functional
+HEALTHCHECK --interval=120s --timeout=30s --start-period=60s --retries=2 \
+    CMD python -c "import torch; print('CUDA:', torch.cuda.is_available())" || exit 1
+
+# ENTRYPOINT accepts a module name: e.g.
+#   docker run vectorlift-trainer apps.trainer.train_biencoder
+#   docker run vectorlift-trainer apps.trainer.train_reranker
+ENTRYPOINT ["python", "-m"]
+CMD ["apps.trainer.train_biencoder"]

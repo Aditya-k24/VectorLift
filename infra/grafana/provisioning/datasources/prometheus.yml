@@ -1,0 +1,23 @@
+# =============================================================================
+# VectorLift — Grafana Datasource Provisioning
+# Prometheus data source
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus-vectorlift
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      exemplarTraceIdDestinations:
+        - name: "traceID"
+          datasourceUid: "tempo-vectorlift"
+    version: 1

@@ -1,0 +1,255 @@
+name: Docker Build & Push
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/vectorlift
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Determine image tags
+  # --------------------------------------------------------------------------
+  meta:
+    name: Compute image metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tags_api: ${{ steps.meta-api.outputs.tags }}
+      tags_dashboard: ${{ steps.meta-dashboard.outputs.tags }}
+      tags_worker: ${{ steps.meta-worker.outputs.tags }}
+      labels: ${{ steps.meta-api.outputs.labels }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Docker meta — API
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Docker meta — Dashboard
+        id: meta-dashboard
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-dashboard
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Docker meta — Worker
+        id: meta-worker
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-worker
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Export version
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------------
+  # Build and push API image
+  # --------------------------------------------------------------------------
+  build-api:
+    name: Build & Push API
+    runs-on: ubuntu-latest
+    needs: meta
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-platform builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/docker/Dockerfile.api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ needs.meta.outputs.tags_api }}
+          labels: ${{ needs.meta.outputs.labels }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+          build-args: |
+            BUILD_VERSION=${{ needs.meta.outputs.version }}
+            BUILD_SHA=${{ github.sha }}
+
+  # --------------------------------------------------------------------------
+  # Build and push Dashboard image
+  # --------------------------------------------------------------------------
+  build-dashboard:
+    name: Build & Push Dashboard
+    runs-on: ubuntu-latest
+    needs: meta
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Dashboard image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/docker/Dockerfile.dashboard
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ needs.meta.outputs.tags_dashboard }}
+          labels: ${{ needs.meta.outputs.labels }}
+          cache-from: type=gha,scope=dashboard
+          cache-to: type=gha,mode=max,scope=dashboard
+          build-args: |
+            BUILD_VERSION=${{ needs.meta.outputs.version }}
+            BUILD_SHA=${{ github.sha }}
+
+  # --------------------------------------------------------------------------
+  # Build and push Worker image
+  # --------------------------------------------------------------------------
+  build-worker:
+    name: Build & Push Worker
+    runs-on: ubuntu-latest
+    needs: meta
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/docker/Dockerfile.worker
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ needs.meta.outputs.tags_worker }}
+          labels: ${{ needs.meta.outputs.labels }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+          build-args: |
+            BUILD_VERSION=${{ needs.meta.outputs.version }}
+            BUILD_SHA=${{ github.sha }}
+
+  # --------------------------------------------------------------------------
+  # Create GitHub Release on tag push
+  # --------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-api, build-dashboard, build-worker]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${TAG}")
+          else
+            NOTES=$(git log --pretty=format:"- %s (%h)" "${TAG}")
+          fi
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "## Changes in ${TAG}" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "${NOTES}" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "## Docker Images" >> "$GITHUB_OUTPUT"
+          echo "- \`ghcr.io/${{ github.repository_owner }}/vectorlift-api:${TAG}\`" >> "$GITHUB_OUTPUT"
+          echo "- \`ghcr.io/${{ github.repository_owner }}/vectorlift-dashboard:${TAG}\`" >> "$GITHUB_OUTPUT"
+          echo "- \`ghcr.io/${{ github.repository_owner }}/vectorlift-worker:${TAG}\`" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body: ${{ steps.release-notes.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

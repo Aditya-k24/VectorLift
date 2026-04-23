@@ -1,0 +1,145 @@
+---
+# =============================================================================
+# VectorLift — Streamlit Dashboard Deployment & Service
+# =============================================================================
+# Apply with:
+#   kubectl apply -n vectorlift -f infra/k8s/dashboard-deployment.yaml
+#
+# Prerequisites:
+#   - namespace "vectorlift" exists (infra/k8s/namespace.yaml applied)
+#   - VectorLift API Service (vectorlift-api:8000) is available in cluster
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vectorlift-dashboard
+  namespace: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    description: "VectorLift Streamlit analytics dashboard"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vectorlift
+      app.kubernetes.io/component: dashboard
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vectorlift
+        app.kubernetes.io/component: dashboard
+        app.kubernetes.io/version: "0.1.0"
+    spec:
+      # ── Security Context ─────────────────────────────────────────────────
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: dashboard
+          image: vectorlift-dashboard:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8501
+              protocol: TCP
+
+          # ── Resource limits ─────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+
+          # ── Environment variables ───────────────────────────────────────
+          env:
+            - name: API_BASE_URL
+              value: "http://vectorlift-api:8000"
+            - name: APP_ENV
+              value: "production"
+
+          # ── Liveness probe ──────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+
+          # ── Readiness probe ─────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 5
+
+          # ── Startup probe ───────────────────────────────────────────────
+          startupProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 12
+
+---
+# =============================================================================
+# VectorLift Dashboard — LoadBalancer Service
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vectorlift-dashboard
+  namespace: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # AWS: use nlb for better performance
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    # GCP
+    cloud.google.com/load-balancer-type: "External"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: dashboard
+  ports:
+    - name: http
+      port: 8501
+      targetPort: http
+      protocol: TCP
+  # Optional: restrict source IPs
+  # loadBalancerSourceRanges:
+  #   - "0.0.0.0/0"

@@ -1,0 +1,126 @@
+# =============================================================================
+# VectorLift — FastAPI Service (Multi-stage build)
+# =============================================================================
+# Stage 1: builder  — compile deps into a virtualenv
+# Stage 2: runtime  — copy only the virtualenv + source; run as non-root
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Builder
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS builder
+
+LABEL stage=builder
+
+# System build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        gcc \
+        g++ \
+        libpq-dev \
+        libffi-dev \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Install pip tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy only dependency manifests first (layer-cache friendly)
+COPY pyproject.toml ./
+
+# Create a minimal package stub so pip can resolve project metadata
+RUN mkdir -p core retrieval apps pipelines \
+    && touch core/__init__.py retrieval/__init__.py apps/__init__.py pipelines/__init__.py
+
+# Install all project dependencies into /build/venv
+RUN pip install --no-cache-dir --prefix=/build/venv \
+        "fastapi>=0.111.0" \
+        "uvicorn[standard]>=0.29.0" \
+        "gunicorn>=22.0.0" \
+        "pydantic>=2.7.0" \
+        "pydantic-settings>=2.3.0" \
+        "sqlalchemy[asyncio]>=2.0.30" \
+        "asyncpg>=0.29.0" \
+        "psycopg2-binary>=2.9.9" \
+        "alembic>=1.13.1" \
+        "elasticsearch>=8.13.0" \
+        "qdrant-client>=1.9.0" \
+        "redis>=5.0.4" \
+        "kafka-python>=2.0.2" \
+        "sentence-transformers>=3.0.0" \
+        "torch>=2.3.0" \
+        "transformers>=4.41.0" \
+        "numpy>=1.26.0" \
+        "scipy>=1.13.0" \
+        "scikit-learn>=1.4.0" \
+        "rank-bm25>=0.2.2" \
+        "prometheus-client>=0.20.0" \
+        "opentelemetry-sdk>=1.24.0" \
+        "opentelemetry-api>=1.24.0" \
+        "opentelemetry-instrumentation-fastapi>=0.45b0" \
+        "opentelemetry-instrumentation-sqlalchemy>=0.45b0" \
+        "opentelemetry-exporter-otlp>=1.24.0" \
+        "httpx>=0.27.0" \
+        "aiohttp>=3.9.5" \
+        "tenacity>=8.3.0" \
+        "python-dotenv>=1.0.1" \
+        "pyyaml>=6.0.1" \
+        "rich>=13.7.1"
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+LABEL maintainer="aditya.kulkarni@isomer.ai" \
+      service="vectorlift-api" \
+      version="0.1.0"
+
+# Runtime system dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd --gid 1001 vectorlift \
+    && useradd --uid 1001 --gid vectorlift --shell /bin/bash --create-home vectorlift
+
+WORKDIR /app
+
+# Copy virtualenv from builder
+COPY --from=builder /build/venv /usr/local
+
+# Copy application source
+COPY --chown=vectorlift:vectorlift core/       ./core/
+COPY --chown=vectorlift:vectorlift retrieval/  ./retrieval/
+COPY --chown=vectorlift:vectorlift apps/       ./apps/
+COPY --chown=vectorlift:vectorlift pipelines/  ./pipelines/
+COPY --chown=vectorlift:vectorlift pyproject.toml ./
+
+# Create data directories and set ownership
+RUN mkdir -p /app/data /app/models \
+    && chown -R vectorlift:vectorlift /app
+
+# Switch to non-root user
+USER vectorlift
+
+# Expose API port
+EXPOSE 8000
+
+# Health check — waits up to 40s for the app to boot
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run with 2 Uvicorn workers (tune via env var UVICORN_WORKERS)
+CMD ["uvicorn", "apps.api.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "2", \
+     "--loop", "uvloop", \
+     "--http", "httptools", \
+     "--proxy-headers", \
+     "--forwarded-allow-ips", "*"]

@@ -1,0 +1,255 @@
+# =============================================================================
+# VectorLift — .gitignore
+# Python 3.11+ | ML/NLP | Docker | Secrets
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Secrets & environment
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+credentials/
+service-account*.json
+gcloud-*.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.virtualenv/
+.python-version
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+htmlcov/
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest_cache/
+
+# Jupyter / notebooks checkpoints
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Linter / formatter caches
+.ruff_cache/
+.black-cache/
+
+# ---------------------------------------------------------------------------
+# Machine Learning & NLP
+# ---------------------------------------------------------------------------
+# Trained model weights & checkpoints
+models/
+!models/.gitkeep
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.tflite
+*.h5
+*.hdf5
+*.pb
+
+# Hugging Face cache
+.cache/huggingface/
+*.arrow
+
+# Datasets (raw & processed)
+data/raw/
+data/processed/
+data/indexes/
+!data/.gitkeep
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/indexes/.gitkeep
+
+# FAISS index files
+*.faiss
+*.index
+
+# Embeddings / numpy dumps
+*.npy
+*.npz
+embeddings/
+
+# Experiment outputs
+experiments/results/
+!experiments/results/.gitkeep
+mlruns/
+wandb/
+runs/
+tensorboard/
+lightning_logs/
+
+# ---------------------------------------------------------------------------
+# Docker
+# ---------------------------------------------------------------------------
+# Don't ignore Dockerfiles or compose files themselves
+!Dockerfile
+!docker-compose*.yml
+# But ignore build context caches
+.docker/
+docker-volumes/
+
+# ---------------------------------------------------------------------------
+# Databases
+# ---------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.sql.gz
+
+# Alembic generated scripts (auto-generated in CI; track migrations only)
+# Uncomment if you want to skip versioned migrations from git:
+# alembic/versions/
+
+# ---------------------------------------------------------------------------
+# Logs & profiling
+# ---------------------------------------------------------------------------
+logs/
+*.log
+*.log.*
+*.pid
+*.trace
+*.prof
+*.pstats
+cProfile_output/
+
+# ---------------------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+
+# ---------------------------------------------------------------------------
+# Editors & IDEs
+# ---------------------------------------------------------------------------
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, DataSpell, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*#
+.#*
+\#*#
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ---------------------------------------------------------------------------
+# Node (if any frontend assets or pre-commit tooling)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# Temporary / misc
+# ---------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.old
+*.swp
+.scratch/
+scratch/

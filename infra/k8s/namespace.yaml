@@ -1,0 +1,17 @@
+---
+# =============================================================================
+# VectorLift — Kubernetes Namespace
+# =============================================================================
+# Apply with: kubectl apply -f infra/k8s/namespace.yaml
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/managed-by: kubectl
+    environment: production
+  annotations:
+    description: "VectorLift Semantic Search & Ranking Engine"

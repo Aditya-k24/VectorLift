@@ -1,0 +1,75 @@
+# =============================================================================
+# VectorLift — Kafka Consumer Worker
+# =============================================================================
+
+FROM python:3.11-slim
+
+LABEL maintainer="aditya.kulkarni@isomer.ai" \
+      service="vectorlift-worker" \
+      version="0.1.0"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        curl \
+        gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd --gid 1001 vectorlift \
+    && useradd --uid 1001 --gid vectorlift --shell /bin/bash --create-home vectorlift
+
+WORKDIR /app
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install worker dependencies
+RUN pip install --no-cache-dir \
+        "kafka-python>=2.0.2" \
+        "elasticsearch>=8.13.0" \
+        "qdrant-client>=1.9.0" \
+        "redis>=5.0.4" \
+        "sentence-transformers>=3.0.0" \
+        "torch>=2.3.0" \
+        "transformers>=4.41.0" \
+        "numpy>=1.26.0" \
+        "pydantic>=2.7.0" \
+        "pydantic-settings>=2.3.0" \
+        "sqlalchemy[asyncio]>=2.0.30" \
+        "asyncpg>=0.29.0" \
+        "psycopg2-binary>=2.9.9" \
+        "prometheus-client>=0.20.0" \
+        "opentelemetry-sdk>=1.24.0" \
+        "opentelemetry-api>=1.24.0" \
+        "python-dotenv>=1.0.1" \
+        "pyyaml>=6.0.1" \
+        "tenacity>=8.3.0" \
+        "rich>=13.7.1"
+
+# Copy application source
+COPY --chown=vectorlift:vectorlift apps/worker/   ./apps/worker/
+COPY --chown=vectorlift:vectorlift apps/__init__.py ./apps/__init__.py
+COPY --chown=vectorlift:vectorlift core/          ./core/
+COPY --chown=vectorlift:vectorlift retrieval/     ./retrieval/
+COPY --chown=vectorlift:vectorlift pyproject.toml ./
+
+# Create data directories
+RUN mkdir -p /app/data /app/models \
+    && chown -R vectorlift:vectorlift /app
+
+# Switch to non-root user
+USER vectorlift
+
+# Worker does not expose ports (internal consumer only)
+# Health check: verify Kafka library is importable + consumer can be instantiated
+HEALTHCHECK --interval=60s --timeout=15s --start-period=30s --retries=3 \
+    CMD python -c "\
+import os; \
+from kafka import KafkaConsumer; \
+c = KafkaConsumer(bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')); \
+c.close(); \
+print('worker healthy')" || exit 1
+
+CMD ["python", "-m", "apps.worker.kafka_consumer"]

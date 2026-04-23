@@ -1,0 +1,52 @@
+[
+  {
+    "id": "p1",
+    "text": "Machine learning is a method of data analysis that automates analytical model building using statistical techniques.",
+    "title": "Machine Learning"
+  },
+  {
+    "id": "p2",
+    "text": "Deep learning is part of a broader family of machine learning methods based on artificial neural networks.",
+    "title": "Deep Learning"
+  },
+  {
+    "id": "p3",
+    "text": "Natural language processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence.",
+    "title": "Natural Language Processing"
+  },
+  {
+    "id": "p4",
+    "text": "Information retrieval is the activity of obtaining information system resources relevant to an information need from a collection.",
+    "title": "Information Retrieval"
+  },
+  {
+    "id": "p5",
+    "text": "Transformer models have revolutionized natural language processing by enabling parallel processing of sequences.",
+    "title": "Transformer Architecture"
+  },
+  {
+    "id": "p6",
+    "text": "Cats are small, carnivorous mammals that are often kept as house pets and are known for their independence.",
+    "title": "Cats"
+  },
+  {
+    "id": "p7",
+    "text": "Vector databases store high-dimensional embeddings and enable fast similarity search using approximate nearest neighbor algorithms.",
+    "title": "Vector Databases"
+  },
+  {
+    "id": "p8",
+    "text": "BM25 is a bag-of-words retrieval function used by search engines to estimate the relevance of documents to a given search query.",
+    "title": "BM25"
+  },
+  {
+    "id": "p9",
+    "text": "Semantic search uses machine learning to understand the meaning and context of a query beyond simple keyword matching.",
+    "title": "Semantic Search"
+  },
+  {
+    "id": "p10",
+    "text": "Retrieval-augmented generation (RAG) combines information retrieval with large language models to produce factually grounded responses.",
+    "title": "RAG"
+  }
+]

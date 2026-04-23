@@ -1,0 +1,328 @@
+# =============================================================================
+# VectorLift — Prometheus Alerting Rules
+# =============================================================================
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # API Latency Alerts
+  # ---------------------------------------------------------------------------
+  - name: vectorlift.latency
+    interval: 30s
+    rules:
+
+      - alert: HighSearchLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(vectorlift_search_duration_seconds_bucket[5m])) by (le, retrieval_mode)
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift P95 search latency exceeds 500ms"
+          description: >
+            The 95th-percentile search latency for mode {{ $labels.retrieval_mode }} is
+            {{ $value | humanizeDuration }} (threshold: 500ms).
+            This has been above the threshold for at least 2 minutes.
+          runbook: "https://docs.vectorlift.internal/runbooks/high-latency"
+
+      - alert: HighSearchLatencyP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum(rate(vectorlift_search_duration_seconds_bucket[5m])) by (le, retrieval_mode)
+          ) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift P99 search latency exceeds 1s"
+          description: >
+            The 99th-percentile search latency for mode {{ $labels.retrieval_mode }} is
+            {{ $value | humanizeDuration }} (threshold: 1s).
+          runbook: "https://docs.vectorlift.internal/runbooks/high-latency"
+
+      - alert: HighEmbeddingLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(vectorlift_embedding_duration_seconds_bucket[5m])) by (le)
+          ) > 0.2
+        for: 3m
+        labels:
+          severity: warning
+          team: ml
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift embedding P95 latency exceeds 200ms"
+          description: >
+            The 95th-percentile embedding generation latency is
+            {{ $value | humanizeDuration }} (threshold: 200ms).
+
+  # ---------------------------------------------------------------------------
+  # Error Rate Alerts
+  # ---------------------------------------------------------------------------
+  - name: vectorlift.errors
+    interval: 30s
+    rules:
+
+      - alert: HighAPIErrorRate
+        expr: |
+          (
+            sum(rate(vectorlift_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(vectorlift_http_requests_total[5m]))
+          ) * 100 > 5
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift API error rate exceeds 5%"
+          description: >
+            The API HTTP 5xx error rate is {{ $value | humanize }}%
+            (threshold: 5%). Immediate investigation required.
+          runbook: "https://docs.vectorlift.internal/runbooks/high-error-rate"
+
+      - alert: ModerateAPIErrorRate
+        expr: |
+          (
+            sum(rate(vectorlift_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(vectorlift_http_requests_total[5m]))
+          ) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift API error rate exceeds 1%"
+          description: >
+            The API HTTP 5xx error rate is {{ $value | humanize }}%
+            (threshold: 1%).
+
+      - alert: HighSearchErrorRate
+        expr: |
+          (
+            sum(rate(vectorlift_search_errors_total[5m]))
+            /
+            sum(rate(vectorlift_search_requests_total[5m]))
+          ) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift search error rate exceeds 5%"
+          description: >
+            The search operation error rate is {{ $value | humanize }}%.
+
+  # ---------------------------------------------------------------------------
+  # Backend Availability Alerts
+  # ---------------------------------------------------------------------------
+  - name: vectorlift.backends
+    interval: 15s
+    rules:
+
+      - alert: ElasticsearchDown
+        expr: |
+          up{job="elasticsearch"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: elasticsearch
+        annotations:
+          summary: "Elasticsearch is unreachable"
+          description: >
+            Prometheus cannot scrape metrics from Elasticsearch at
+            {{ $labels.instance }}. The BM25 / keyword search backend is down.
+            BM25 and hybrid retrieval modes will fail.
+          runbook: "https://docs.vectorlift.internal/runbooks/elasticsearch-down"
+
+      - alert: ElasticsearchClusterUnhealthy
+        expr: |
+          elasticsearch_cluster_health_status{color="red"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          service: elasticsearch
+        annotations:
+          summary: "Elasticsearch cluster health is RED"
+          description: >
+            The Elasticsearch cluster {{ $labels.cluster }} health status is RED.
+            Primary shards are not allocated.
+
+      - alert: ElasticsearchClusterYellow
+        expr: |
+          elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: elasticsearch
+        annotations:
+          summary: "Elasticsearch cluster health is YELLOW"
+          description: >
+            The Elasticsearch cluster health status is YELLOW.
+            Replica shards are not allocated.
+
+      - alert: QdrantDown
+        expr: |
+          up{job="qdrant"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: qdrant
+        annotations:
+          summary: "Qdrant vector store is unreachable"
+          description: >
+            Prometheus cannot scrape metrics from Qdrant at
+            {{ $labels.instance }}. Dense and hybrid retrieval modes will fail.
+          runbook: "https://docs.vectorlift.internal/runbooks/qdrant-down"
+
+      - alert: PostgresDown
+        expr: |
+          up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: postgres
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: >
+            Prometheus cannot scrape metrics from PostgreSQL at
+            {{ $labels.instance }}. Experiment tracking and metadata storage are unavailable.
+
+      - alert: RedisDown
+        expr: |
+          up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+          service: redis
+        annotations:
+          summary: "Redis cache is unreachable"
+          description: >
+            Prometheus cannot scrape metrics from Redis at {{ $labels.instance }}.
+            Search result caching is degraded; all requests will hit backends directly.
+
+  # ---------------------------------------------------------------------------
+  # Kafka Consumer Lag Alerts
+  # ---------------------------------------------------------------------------
+  - name: vectorlift.kafka
+    interval: 30s
+    rules:
+
+      - alert: KafkaConsumerLagHigh
+        expr: |
+          kafka_consumergroup_lag{
+            consumergroup="vectorlift-consumers"
+          } > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          service: kafka
+        annotations:
+          summary: "Kafka consumer lag exceeds 1000 messages"
+          description: >
+            Consumer group {{ $labels.consumergroup }} on topic {{ $labels.topic }}
+            partition {{ $labels.partition }} has a lag of {{ $value }} messages
+            (threshold: 1000). The worker may be falling behind.
+          runbook: "https://docs.vectorlift.internal/runbooks/kafka-lag"
+
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          kafka_consumergroup_lag{
+            consumergroup="vectorlift-consumers"
+          } > 10000
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          service: kafka
+        annotations:
+          summary: "Kafka consumer lag exceeds 10,000 messages — CRITICAL"
+          description: >
+            Consumer group {{ $labels.consumergroup }} on topic {{ $labels.topic }}
+            partition {{ $labels.partition }} has a lag of {{ $value }} messages.
+            Worker is severely falling behind; investigate immediately.
+
+      - alert: KafkaBrokerDown
+        expr: |
+          up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: kafka
+        annotations:
+          summary: "Kafka broker is unreachable"
+          description: >
+            Prometheus cannot scrape metrics from the Kafka broker at
+            {{ $labels.instance }}. Event streaming and async processing are down.
+
+  # ---------------------------------------------------------------------------
+  # API Availability / Throughput Alerts
+  # ---------------------------------------------------------------------------
+  - name: vectorlift.availability
+    interval: 30s
+    rules:
+
+      - alert: VectorLiftAPIDown
+        expr: |
+          up{job="vectorlift-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift API is down"
+          description: >
+            The VectorLift API at {{ $labels.instance }} is unreachable.
+            All search functionality is unavailable.
+          runbook: "https://docs.vectorlift.internal/runbooks/api-down"
+
+      - alert: LowSearchThroughput
+        expr: |
+          sum(rate(vectorlift_search_requests_total[5m])) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift search throughput is abnormally low"
+          description: >
+            Fewer than 0.1 search requests per second have been observed
+            over the past 10 minutes. This may indicate a traffic anomaly or
+            upstream issue.
+
+      - alert: HighActiveConnections
+        expr: |
+          vectorlift_active_connections > 500
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+          service: vectorlift-api
+        annotations:
+          summary: "VectorLift API has high active connections"
+          description: >
+            The number of active HTTP connections to the API is {{ $value }}
+            (threshold: 500). Consider scaling horizontally.

@@ -1,0 +1,260 @@
+---
+# =============================================================================
+# VectorLift — FastAPI Deployment & Service
+# =============================================================================
+# Apply with:
+#   kubectl apply -n vectorlift -f infra/k8s/api-deployment.yaml
+#
+# Prerequisites:
+#   - namespace "vectorlift" exists (infra/k8s/namespace.yaml applied)
+#   - Secret "vectorlift-secrets" with DB, ES, Qdrant, Redis, Kafka creds
+#   - ConfigMap "vectorlift-config" with non-secret env vars
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vectorlift-api
+  namespace: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    description: "VectorLift FastAPI search engine"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vectorlift
+      app.kubernetes.io/component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vectorlift
+        app.kubernetes.io/component: api
+        app.kubernetes.io/version: "0.1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # ── Security Context ─────────────────────────────────────────────────
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+
+      # ── Termination grace period ──────────────────────────────────────────
+      terminationGracePeriodSeconds: 30
+
+      # ── Service Account ───────────────────────────────────────────────────
+      serviceAccountName: default
+
+      containers:
+        - name: api
+          image: vectorlift-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          # ── Resource limits ─────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+
+          # ── Environment variables ───────────────────────────────────────
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: API_HOST
+              value: "0.0.0.0"
+            - name: API_PORT
+              value: "8000"
+            # Injected from Secret
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vectorlift-secrets
+                  key: postgres-password
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vectorlift-secrets
+                  key: secret-key
+            # Injected from ConfigMap
+            - name: ELASTICSEARCH_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorlift-config
+                  key: elasticsearch-host
+                  optional: true
+            - name: QDRANT_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorlift-config
+                  key: qdrant-host
+                  optional: true
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorlift-config
+                  key: postgres-host
+                  optional: true
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorlift-config
+                  key: redis-host
+                  optional: true
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorlift-config
+                  key: kafka-bootstrap-servers
+                  optional: true
+
+          # ── Liveness probe ──────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            timeoutSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+
+          # ── Readiness probe ─────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 5
+
+          # ── Startup probe (give app time to load models) ────────────────
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 12
+
+          # ── Volume mounts ───────────────────────────────────────────────
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: models
+              mountPath: /app/models
+              readOnly: true
+
+      # ── Volumes ───────────────────────────────────────────────────────────
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: models
+          persistentVolumeClaim:
+            claimName: vectorlift-models-pvc
+            readOnly: true
+
+      # ── Affinity / anti-affinity ──────────────────────────────────────────
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - api
+                topologyKey: kubernetes.io/hostname
+
+---
+# =============================================================================
+# VectorLift API — ClusterIP Service
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vectorlift-api
+  namespace: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: api
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+
+---
+# =============================================================================
+# VectorLift API — HorizontalPodAutoscaler
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vectorlift-api-hpa
+  namespace: vectorlift
+  labels:
+    app.kubernetes.io/name: vectorlift
+    app.kubernetes.io/component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vectorlift-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

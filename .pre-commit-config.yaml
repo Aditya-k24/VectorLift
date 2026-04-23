@@ -1,0 +1,173 @@
+# =============================================================================
+# VectorLift — pre-commit configuration
+# =============================================================================
+# Install hooks:    pre-commit install
+# Run manually:     pre-commit run --all-files
+# Update hooks:     pre-commit autoupdate
+# =============================================================================
+
+default_language_version:
+  python: python3.11
+
+# Run hooks in parallel where possible
+default_stages: [commit, push]
+
+repos:
+  # ---------------------------------------------------------------------------
+  # General file hygiene
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+        exclude: "^data/|^models/|^notebooks/"
+      - id: check-yaml
+        args: [--unsafe]  # allow custom YAML tags
+      - id: check-toml
+      - id: check-json
+        exclude: "^.vscode/"
+      - id: check-added-large-files
+        args: [--maxkb=5120]  # 5 MB hard limit
+        exclude: "^data/|^models/"
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: check-executables-have-shebangs
+      - id: detect-private-key
+      - id: detect-aws-credentials
+        args: [--allow-missing-credentials]
+      - id: forbid-new-submodules
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: no-commit-to-branch
+        args: [--branch=main, --branch=master]
+
+  # ---------------------------------------------------------------------------
+  # Secret scanning
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: "^.env.example$|^tests/fixtures/"
+
+  # ---------------------------------------------------------------------------
+  # Python: ruff (fast linter + import sorter, replaces flake8 + isort)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.7
+    hooks:
+      - id: ruff
+        args:
+          - --fix
+          - --exit-non-zero-on-fix
+        types_or: [python, pyi]
+        exclude: "^notebooks/"
+      - id: ruff-format
+        types_or: [python, pyi]
+        exclude: "^notebooks/"
+
+  # ---------------------------------------------------------------------------
+  # Python: black (formatter — runs after ruff to enforce style)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        language_version: python3.11
+        args: [--line-length=100]
+        exclude: "^notebooks/"
+
+  # ---------------------------------------------------------------------------
+  # Python: mypy (static type checker)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - pydantic>=2.7.0
+          - pydantic-settings>=2.3.0
+          - types-pyyaml
+          - types-redis
+          - sqlalchemy[mypy]>=2.0.30
+        args:
+          - --ignore-missing-imports
+          - --show-error-codes
+          - --no-error-summary
+        exclude: "^tests/|^notebooks/|^scripts/|^alembic/"
+
+  # ---------------------------------------------------------------------------
+  # Dockerfile linting
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.1-beta
+    hooks:
+      - id: hadolint
+        args:
+          - --ignore=DL3008  # apt-get without version pinning (acceptable in dev)
+          - --ignore=DL3009  # delete apt-get lists
+          - --ignore=DL3013  # pip without version pinning (managed by pyproject.toml)
+
+  # ---------------------------------------------------------------------------
+  # YAML linting
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args:
+          - --config-data
+          - |
+            extends: default
+            rules:
+              line-length:
+                max: 140
+              truthy:
+                allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+              comments:
+                min-spaces-from-content: 1
+        exclude: "^infra/kubernetes/|^.github/"
+
+  # ---------------------------------------------------------------------------
+  # Commit message format (Conventional Commits)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - build
+          - ci
+          - chore
+          - revert
+
+  # ---------------------------------------------------------------------------
+  # Python: pyupgrade (modernise syntax to Python 3.11+)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.16.0
+    hooks:
+      - id: pyupgrade
+        args: [--py311-plus]
+        exclude: "^notebooks/"
+
+  # ---------------------------------------------------------------------------
+  # Notebook hygiene (strip output cells before committing)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        files: "^notebooks/.*\\.ipynb$"
